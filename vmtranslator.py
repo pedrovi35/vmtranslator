@@ -40,7 +40,7 @@ def main() -> None:
         sys.exit(1)
 
     output = translate(sys.argv[1])
-    print(f"Translated → {output}")
+    print(f"Translated: {output}")
 
 
 if __name__ == "__main__":
