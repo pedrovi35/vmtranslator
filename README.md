@@ -7,14 +7,12 @@
 
 ---
 
-## Autor
+## Autores
 
-| Campo | Informação |
-|---|---|
-| **Nome** | Pedro Victor Rocha Gonçalves
-Sara Ferreira de Souza — 2022029911|
-| **Matrícula** | 2022029920 |
-| **GitHub** | [@pedrovi35](https://github.com/pedrovi35) |
+| Nome | Matrícula | GitHub |
+|---|---|---|
+| Pedro Victor Rocha Gonçalves | 2022029920 | [@pedrovi35](https://github.com/pedrovi35) |
+| Sara Ferreira de Souza | 2022029911 | - |
 
 ---
 
