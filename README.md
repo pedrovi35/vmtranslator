@@ -11,7 +11,8 @@
 
 | Campo | Informação |
 |---|---|
-| **Nome** | Pedro Victor Rocha Gonçalves |
+| **Nome** | Pedro Victor Rocha Gonçalves
+Sara Ferreira de Souza — 2022029911|
 | **Matrícula** | 2022029920 |
 | **GitHub** | [@pedrovi35](https://github.com/pedrovi35) |
 
