@@ -12,7 +12,7 @@
 | Nome | Matrícula | GitHub |
 |---|---|---|
 | Pedro Victor Rocha Gonçalves | 2022029920 | [@pedrovi35](https://github.com/pedrovi35) |
-| Sara Ferreira de Souza | 2022029911 | - | [@SaraFerreira42](https://github.com/SaraFerreira42) |
+| Sara Ferreira de Souza | 2022029911 | [@SaraFerreira42](https://github.com/SaraFerreira42) |
 
 ---
 
