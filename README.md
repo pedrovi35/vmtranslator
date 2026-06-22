@@ -25,6 +25,7 @@ O software é capaz de ler arquivos de bytecode de máquina virtual (`.vm`), int
 ---
 
 ## 📁 Estrutura do Repositório 
+```text
 vmtranslator/
 ├── codewriter/
 │   ├── __init__.py
