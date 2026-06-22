@@ -50,7 +50,7 @@ vmtranslator/
 ├── requirements.txt
 └── README.md
 ---
-
+```
 ## Como Executar
 
 ### Pré-requisitos
@@ -61,7 +61,7 @@ vmtranslator/
 
 ```bash
 pip install -r requirements.txt
-```
+
 
 ### Traduzir um arquivo `.vm`
 
