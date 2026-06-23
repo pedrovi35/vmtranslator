@@ -12,7 +12,7 @@
 | Nome | Matrícula | GitHub |
 |---|---|---|
 | Pedro Victor Rocha Gonçalves | 2022029920 | [@pedrovi35](https://github.com/pedrovi35) |
-| Sara Ferreira de Souza | 2022029911 | - | [@SaraFereira45]( https://github.com/SaraFerreira42)|
+| Sara Ferreira de Souza | 2022029911 | [@SaraFereira45]( https://github.com/SaraFerreira42)|
 
 ---
 
@@ -25,6 +25,7 @@ O software é capaz de ler arquivos de bytecode de máquina virtual (`.vm`), int
 ---
 
 ## 📁 Estrutura do Repositório 
+```text
 vmtranslator/
 ├── codewriter/
 │   ├── __init__.py
@@ -37,8 +38,27 @@ vmtranslator/
 │   ├── test_parser.py     # Testes unitários do Parser expandidos (27 casos)
 │   ├── test_code_writer.py # Testes unitários do CodeWriter expandidos (24 casos)
 │   └── projects08/        # Pasta de testes oficiais do projeto 08 integrado ao repositório
-│       ├── FunctionCalls/ # Testes de funções (SimpleFunction, NestedCall, etc.)
-│       └── ProgramFlow/   # Testes de controle de fluxo (BasicLoop, FibonacciSeries)
+│       ├── FunctionCalls/
+│       │   ├── FibonacciElement/
+│       │   ├── StaticsTest/
+│       │   ├── SimpleFunction/
+│       │   │   ├── SimpleFunction.vm
+│       │   │   ├── SimpleFunction.tst
+│       │   │   └── SimpleFunction.cmp
+│       │   └── NestedCall/    # Teste mais completo (com Sys.init)
+│       │       ├── NestedCall.vm
+│       │       ├── NestedCall.tst
+│       │       ├── NestedCall.cmp
+│       │       └── Sys.vm         # Contém Sys.init, Sys.main, Sys.add12
+│       └── ProgramFlow/
+│           ├── BasicLoop/
+│           │   ├── BasicLoop.vm
+│           │   ├── BasicLoop.tst
+│           │   └── BasicLoop.cmp
+│           └── FibonacciSeries/
+│               ├── FibonacciSeries.vm
+│               ├── FibonacciSeries.tst
+│               └── FibonacciSeries.cmp
 ├── StackArithmetic/       # Amostras de testes da Parte 1
 │   └── SimpleAdd/SimpleAdd.vm
 ├── MemoryAccess/          # Amostras de testes da Parte 1
@@ -49,7 +69,7 @@ vmtranslator/
 ├── requirements.txt
 └── README.md
 ---
-
+```
 ## Como Executar
 
 ### Pré-requisitos
@@ -60,7 +80,7 @@ vmtranslator/
 
 ```bash
 pip install -r requirements.txt
-```
+
 
 ### Traduzir um arquivo `.vm`
 
