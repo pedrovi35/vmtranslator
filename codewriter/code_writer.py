@@ -1,255 +1,158 @@
-"""CodeWriter: translates VM commands into Hack assembly instructions."""
-
-from __future__ import annotations
-from pathlib import Path
-
-
-# Segments that use a base-pointer stored in a named register
-_PTR_SEGMENTS: dict[str, str] = {
-    "local": "LCL",
-    "argument": "ARG",
-    "this": "THIS",
-    "that": "THAT",
-}
-
-# Arithmetic/logic binary operations → ALU expression
-_BINARY_OP: dict[str, str] = {
-    "add": "D+M",
-    "sub": "M-D",
-    "and": "D&M",
-    "or": "D|M",
-}
-
-# Unary operations → ALU expression
-_UNARY_OP: dict[str, str] = {
-    "neg": "-M",
-    "not": "!M",
-}
-
-# Comparison operations → Hack jump mnemonic
-_COMPARE_JUMP: dict[str, str] = {
-    "eq": "JEQ",
-    "gt": "JGT",
-    "lt": "JLT",
-}
+import os
 
 
 class CodeWriter:
-    """Writes Hack assembly for a single .vm translation unit."""
 
-    def __init__(self, filename: str) -> None:
-        self._file = open(filename, "w")
-        self._module = Path(filename).stem
-        self._label_count = 0
-        self._current_function = "OS"
+    def __init__(self, output_filename):
+        self.file = open(output_filename, "w")
+        self.current_vm_file = ""
+        self.current_function = "none"
+        self.label_counter = 0
 
-    def set_filename(self, filename: str) -> None:
-        """Informa ao CodeWriter que a tradução de um novo arquivo .vm foi iniciada."""
-        self._module = filename
+        self.segments_map = {
+            "local": "LCL",
+            "argument": "ARG",
+            "this": "THIS",
+            "that": "THAT",
+        }
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def set_file_name(self, filename):
+        """Define o contexto do arquivo limpando qualquer resíduo de extensão."""
+        self.current_vm_file = filename.replace(".vm", "").replace(".VM", "")
 
-    def write_arithmetic(self, command: str) -> None:
-        self._emit(f"// {command}")
-        if command in _BINARY_OP:
-            self._emit(*self._binary_op(command))
-        elif command in _UNARY_OP:
-            self._emit(*self._unary_op(command))
-        elif command in _COMPARE_JUMP:
-            self._emit(*self._compare_op(command))
-        else:
-            raise ValueError(f"Unknown arithmetic command: {command!r}")
-
-    def write_push_pop(self, command_type: str, segment: str, index: int) -> None:
-        """Método despachante chamado pelo laço principal do vmtranslator.py."""
-        if command_type == "C_PUSH":
-            self.write_push(segment, index)
-        elif command_type == "C_POP":
-            self.write_pop(segment, index)
-
-    def write_push(self, segment: str, index: int) -> None:
-        self._emit(f"// push {segment} {index}")
-        self._emit(*self._push_code(segment, index))
-
-    def write_pop(self, segment: str, index: int) -> None:
-        self._emit(f"// pop {segment} {index}")
-        self._emit(*self._pop_code(segment, index))
-
-    # --- Program Flow ---
-
-    def write_label(self, label: str) -> None:
-        self._emit(f"// label {label}")
-        self._emit(f"({self._current_function}${label})")
-
-    def write_goto(self, label: str) -> None:
-        self._emit(f"// goto {label}")
-        self._emit(f"@{self._current_function}${label}", "0;JMP")
-
-    def write_if(self, label: str) -> None:
-        self._emit(f"// if-goto {label}")
-        self._emit(
-            "@SP",
-            "AM=M-1",
-            "D=M",
-            f"@{self._current_function}${label}",
-            "D;JNE"
-        )
-
-    # --- Subroutines ---
-
-    def write_function(self, function_name: str, num_locals: int) -> None:
-        self._emit(f"// function {function_name} {num_locals}")
-        self._current_function = function_name
-        self._emit(f"({function_name})")
-        for _ in range(num_locals):
-            self._emit("@SP", "A=M", "M=0", "@SP", "M=M+1")
-
-    def write_call(self, function_name: str, num_args: int) -> None:
-        self._emit(f"// call {function_name} {num_args}")
-        ret_label = f"{function_name}$ret.{self._label_count}"
-        self._label_count += 1
-
-        # 1. Push return-address
-        self._emit(f"@{ret_label}", "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1")
-        # 2. Push LCL, ARG, THIS, THAT
-        for segment in ["LCL", "ARG", "THIS", "THAT"]:
-            self._emit(f"@{segment}", "D=M", "@SP", "A=M", "M=D", "@SP", "M=M+1")
-        # 3. ARG = SP - 5 - num_args
-        self._emit("@SP", "D=M", f"@{5 + num_args}", "D=D-A", "@ARG", "M=D")
-        # 4. LCL = SP
-        self._emit("@SP", "D=M", "@LCL", "M=D")
-        # 5. goto function_name
-        self._emit(f"@{function_name}", "0;JMP")
-        # 6. (return-address)
-        self._emit(f"({ret_label})")
-
-    def write_return(self) -> None:
-        self._emit("// return")
-        # endFrame (R14) = LCL
-        self._emit("@LCL", "D=M", "@R14", "M=D")
-        # retAddr (R15) = *(endFrame - 5)
-        self._emit("@5", "A=D-A", "D=M", "@R15", "M=D")
-        # *ARG = pop()
-        self._emit("@SP", "AM=M-1", "D=M", "@ARG", "A=M", "M=D")
-        # SP = ARG + 1
-        self._emit("@ARG", "D=M+1", "@SP", "M=D")
-        # Restaura THAT, THIS, ARG, LCL de endFrame - 1 até endFrame - 4
-        for i, segment in enumerate(["THAT", "THIS", "ARG", "LCL"], 1):
-            self._emit("@R14", "D=M", f"@{i}", "A=D-A", "D=M", f"@{segment}", "M=D")
-        # goto retAddr
-        self._emit("@R15", "A=M", "0;JMP")
-
-    def close(self) -> None:
-        self._file.close()
-
-    # ------------------------------------------------------------------
-    # Code Helpers & Bootstrap
-    # ------------------------------------------------------------------
-
-    def write_bootstrap(self) -> None:
-        """Inicializa o ponteiro da pilha (SP=256) e chama Sys.init."""
-        self._emit("// --- BOOTSTRAP INITIALIZATION ---", "@256", "D=A", "@SP", "M=D")
+    def write_bootstrap(self):
+        self.file.write("// --- BOOTSTRAP INITIALIZATION ---\n")
+        self.file.write("@256\nD=A\n@SP\nM=D\n")
         self.write_call("Sys.init", 0)
 
-    def _binary_op(self, command: str) -> list[str]:
-        return [
-            "@SP",
-            "AM=M-1",
-            "D=M",
-            "A=A-1",
-            f"M={_BINARY_OP[command]}",
-        ]
+    def write_arithmetic(self, command):
+        self.file.write(f"// {command}\n")
+        if command in ["add", "sub", "and", "or"]:
+            self.file.write("@SP\nAM=M-1\nD=M\nA=A-1\n")
+            if command == "add":
+                self.file.write("M=D+M\n")
+            elif command == "sub":
+                self.file.write("M=M-D\n")
+            elif command == "and":
+                self.file.write("M=D&M\n")
+            elif command == "or":
+                self.file.write("M=D|M\n")
 
-    def _unary_op(self, command: str) -> list[str]:
-        return [
-            "@SP",
-            "A=M-1",
-            f"M={_UNARY_OP[command]}",
-        ]
+        elif command in ["neg", "not"]:
+            self.file.write("@SP\nA=M-1\n")
+            if command == "neg":
+                self.file.write("M=-M\n")
+            elif command == "not":
+                self.file.write("M=!M\n")
 
-    def _compare_op(self, command: str) -> list[str]:
-        true_lbl = f"VM_TRUE_{self._label_count}"
-        end_lbl = f"VM_END_{self._label_count}"
-        self._label_count += 1
-        jump = _COMPARE_JUMP[command]
-        return [
-            "@SP",
-            "AM=M-1",
-            "D=M",
-            "A=A-1",
-            "D=M-D",
-            f"@{true_lbl}",
-            f"D;{jump}",
-            "@SP",
-            "A=M-1",
-            "M=0",
-            f"@{end_lbl}",
-            "0;JMP",
-            f"({true_lbl})",
-            "@SP",
-            "A=M-1",
-            "M=-1",
-            f"({end_lbl})",
-        ]
+        elif command in ["eq", "gt", "lt"]:
+            label_true = f"COMP_TRUE_{self.current_vm_file}_{self.label_counter}"
+            label_end = f"COMP_END_{self.current_vm_file}_{self.label_counter}"
+            self.label_counter += 1
 
-    def _push_code(self, segment: str, index: int) -> list[str]:
-        load = self._load_segment_to_d(segment, index)
-        return load + [
-            "@SP",
-            "A=M",
-            "M=D",
-            "@SP",
-            "M=M+1",
-        ]
+            self.file.write("@SP\nAM=M-1\nD=M\nA=A-1\nD=M-D\n")
+            self.file.write(f"@{label_true}\n")
 
-    def _load_segment_to_d(self, segment: str, index: int) -> list[str]:
-        if segment == "constant":
-            return [f"@{index}", "D=A"]
-        if segment in _PTR_SEGMENTS:
-            base = _PTR_SEGMENTS[segment]
-            return [f"@{index}", "D=A", f"@{base}", "A=D+M", "D=M"]
-        if segment == "temp":
-            return [f"@{5 + index}", "D=M"]
-        if segment == "pointer":
-            reg = "THIS" if index == 0 else "THAT"
-            return [f"@{reg}", "D=M"]
-        if segment == "static":
-            return [f"@{self._module}.{index}", "D=M"]
-        raise ValueError(f"Unknown segment: {segment!r}")
+            if command == "eq":
+                self.file.write("D;JEQ\n")
+            elif command == "gt":
+                self.file.write("D;JGT\n")
+            elif command == "lt":
+                self.file.write("D;JLT\n")
 
-    def _pop_code(self, segment: str, index: int) -> list[str]:
-        if segment in _PTR_SEGMENTS:
-            base = _PTR_SEGMENTS[segment]
-            return [
-                f"@{index}", "D=A", f"@{base}", "D=D+M",
-                "@R13", "M=D",
-                "@SP", "AM=M-1",
-                "D=M",
-                "@R13", "A=M", "M=D",
-            ]
-        if segment == "temp":
-            return [
-                "@SP", "AM=M-1",
-                "D=M",
-                f"@{5 + index}", "M=D",
-            ]
-        if segment == "pointer":
-            reg = "THIS" if index == 0 else "THAT"
-            return [
-                "@SP", "AM=M-1",
-                "D=M",
-                f"@{reg}", "M=D",
-            ]
-        if segment == "static":
-            return [
-                "@SP", "AM=M-1",
-                "D=M",
-                f"@{self._module}.{index}", "M=D",
-            ]
-        raise ValueError(f"Unknown segment: {segment!r}")
+            self.file.write("@SP\nA=M-1\nM=0\n")
+            self.file.write(f"@{label_end}\n0;JMP\n")
+            self.file.write(f"({label_true})\n@SP\nA=M-1\nM=-1\n")
+            self.file.write(f"({label_end})\n")
 
-    def _emit(self, *lines: str) -> None:
-        for line in lines:
-            self._file.write(line + "\n")
+    def write_push_pop(self, command, segment, index):
+        self.file.write(f"// {command} {segment} {index}\n")
+
+        if command == "push":
+            if segment == "constant":
+                self.file.write(f"@{index}\nD=A\n")
+            elif segment in self.segments_map:
+                self.file.write(
+                    f"@{index}\nD=A\n@{self.segments_map[segment]}\nA=D+M\nD=M\n"
+                )
+            elif segment in ["pointer", "temp"]:
+                base = 3 if segment == "pointer" else 5
+                self.file.write(f"@{base + index}\nD=M\n")
+            elif segment == "static":
+                self.file.write(f"@{self.current_vm_file}.{index}\nD=M\n")
+
+            self.file.write("@SP\nA=M\nM=D\n@SP\nM=M+1\n")
+
+        elif command == "pop":
+            if segment in self.segments_map:
+                self.file.write(
+                    f"@{index}\nD=A\n@{self.segments_map[segment]}\nD=D+M\n@R13\nM=D\n"
+                )
+                self.file.write("@SP\nAM=M-1\nD=M\n@R13\nA=M\nM=D\n")
+            elif segment in ["pointer", "temp"]:
+                base = 3 if segment == "pointer" else 5
+                self.file.write(f"@SP\nAM=M-1\nD=M\n@{base + index}\nM=D\n")
+            elif segment == "static":
+                self.file.write(
+                    f"@SP\nAM=M-1\nD=M\n@{self.current_vm_file}.{index}\nM=D\n"
+                )
+
+    def _get_full_label(self, label):
+        """Mapeia dinamicamente o escopo do label atual garantindo isolamento sem pontos."""
+        if self.current_function != "none" and self.current_function != "":
+            return f"{self.current_function}${label}"
+        return f"{self.current_vm_file}${label}"
+
+    def write_label(self, label):
+        full_label = self._get_full_label(label)
+        self.file.write(f"({full_label})\n")
+
+    def write_goto(self, label):
+        full_label = self._get_full_label(label)
+        self.file.write(f"@{full_label}\n0;JMP\n")
+
+    def write_if_goto(self, label):
+        full_label = self._get_full_label(label)
+        self.file.write(f"@SP\nAM=M-1\nD=M\n@{full_label}\nD;JNE\n")
+
+    def write_function(self, function_name, num_locals):
+        self.current_function = function_name
+        self.file.write(f"({function_name})\n")
+        for _ in range(num_locals):
+            self.file.write("@0\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n")
+
+    def write_call(self, function_name, num_args):
+        return_label = f"{function_name}$ret.{self.label_counter}"
+        self.label_counter += 1
+
+        self.file.write(f"@{return_label}\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n")
+        for seg in ["LCL", "ARG", "THIS", "THAT"]:
+            self.file.write(f"@{seg}\nD=M\n@SP\nA=M\nM=D\n@SP\nM=M+1\n")
+
+        self.file.write(f"@SP\nD=M\n@{5 + num_args}\nD=D-A\n@ARG\nM=D\n")
+        self.file.write("@SP\nD=M\n@LCL\nM=D\n")
+        self.file.write(f"@{function_name}\n0;JMP\n")
+        self.file.write(f"({return_label})\n")
+
+    def write_return(self):
+        self.file.write("// return\n")
+        # 1. R14 = FRAME (guarda valor de LCL)
+        self.file.write("@LCL\nD=M\n@R14\nM=D\n")
+        # 2. R15 = RET_ADDRESS = *(FRAME - 5)
+        self.file.write("@5\nA=D-A\nD=M\n@R15\nM=D\n")
+        # 3. *ARG = pop()
+        self.file.write("@SP\nAM=M-1\nD=M\n@ARG\nA=M\nM=D\n")
+        # 4. SP = ARG + 1
+        self.file.write("@ARG\nD=M+1\n@SP\nM=D\n")
+        # 5. Restaura segmentos usando offset fixo sobre R14
+        self.file.write("@R14\nD=M\n@1\nA=D-A\nD=M\n@THAT\nM=D\n")
+        self.file.write("@R14\nD=M\n@2\nA=D-A\nD=M\n@THIS\nM=D\n")
+        self.file.write("@R14\nD=M\n@3\nA=D-A\nD=M\n@ARG\nM=D\n")
+        self.file.write("@R14\nD=M\n@4\nA=D-A\nD=M\n@LCL\nM=D\n")
+        # 6. Pula para o endereço de retorno
+        self.file.write("@R15\nA=M\n0;JMP\n")
+
+    def close(self):
+        # Garante um loop infinito estruturado de segurança no fim do arquivo físico
+        self.file.write("// --- END SECURITY LOOP ---\n(INFINITE_LOOP)\n@INFINITE_LOOP\n0;JMP\n")
+        self.file.close()

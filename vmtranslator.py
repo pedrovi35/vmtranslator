@@ -1,67 +1,102 @@
 import os
 import sys
-from parser.parser import Parser
 from codewriter.code_writer import CodeWriter
+
+
+def translate_file(file_path, code_writer):
+    """Lê um arquivo .vm linha por linha e envia os comandos para o CodeWriter."""
+    with open(file_path, "r") as file:
+        for line in file:
+            # Remove comentários e espaços em branco nas pontas
+            line = line.split("//")[0].strip()
+            if not line:
+                continue
+
+            tokens = line.split()
+            command_type = tokens[0]
+
+            # Comandos Aritméticos / Lógicos
+            if command_type in [
+                "add",
+                "sub",
+                "neg",
+                "eq",
+                "gt",
+                "lt",
+                "and",
+                "or",
+                "not",
+            ]:
+                code_writer.write_arithmetic(command_type)
+
+            # Comandos de Memória (Push / Pop)
+            elif command_type in ["push", "pop"]:
+                segment = tokens[1]
+                index = int(tokens[2])
+                code_writer.write_push_pop(command_type, segment, index)
+
+            # Comandos de Controle de Fluxo
+            elif command_type == "label":
+                code_writer.write_label(tokens[1])
+            elif command_type == "goto":
+                code_writer.write_goto(tokens[1])
+            elif command_type == "if-goto":
+                code_writer.write_if_goto(tokens[1])
+
+            # Comandos de Funções
+            elif command_type == "function":
+                code_writer.write_function(tokens[1], int(tokens[2]))
+            elif command_type == "call":
+                code_writer.write_call(tokens[1], int(tokens[2]))
+            elif command_type == "return":
+                code_writer.write_return()
+
+
+def clean_filename(path):
+    """Extrai apenas o nome do arquivo sem caminho e sem extensão .vm de forma robusta."""
+    base = os.path.basename(path)
+    if base.lower().endswith(".vm"):
+        base = base[:-3]
+    return base
+
 
 def main():
     if len(sys.argv) < 2:
-        print("Uso: python vmtranslator.py <caminho_arquivo_ou_diretorio>")
-        sys.exit(1)
+        print("Uso: python vmtranslator.py <arquivo.vm ou diretorio>")
+        return
 
-    input_path = sys.argv[1]
-    vm_files = []
+    argument_path = os.path.abspath(sys.argv[1])
 
-    # 1. Verifica se a entrada é um diretório ou um arquivo único
-    if os.path.isdir(input_path):
-        for f in os.listdir(input_path):
-            if f.endswith('.vm'):
-                vm_files.append(os.path.join(input_path, f))
-        
-        dirname = os.path.basename(os.path.normpath(input_path))
-        output_file = os.path.join(input_path, f"{dirname}.asm")
+    if os.path.isdir(argument_path):
+        dir_name = os.path.basename(os.path.normpath(argument_path))
+        output_file = os.path.join(argument_path, f"{dir_name}.asm")
+        is_directory = True
     else:
-        vm_files.append(input_path)
-        output_file = input_path.replace('.vm', '.asm')
+        output_file = argument_path.replace(".vm", ".asm")
+        is_directory = False
 
-    if not vm_files:
-        print("Nenhum arquivo .vm encontrado.")
-        sys.exit(1)
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    # 2. Instancia o CodeWriter
     cw = CodeWriter(output_file)
 
-    # 3. Executa o Bootstrap explicitamente para a compilação final real
-    cw.write_bootstrap()
-
-    # 4. Processa cada arquivo .vm encontrado sequencialmente
-    for vm_file in vm_files:
-        filename_only = os.path.basename(vm_file).replace('.vm', '')
-        cw.set_filename(filename_only)
-
-        parser = Parser(vm_file)
-        while parser.has_more_commands():
-            parser.advance()
-            cmd_type = parser.command_type()
-
-            if cmd_type == "C_ARITHMETIC":
-                cw.write_arithmetic(parser.arg1())
-            elif cmd_type in ("C_PUSH", "C_POP"):
-                cw.write_push_pop(cmd_type, parser.arg1(), parser.arg2())
-            elif cmd_type == "C_LABEL":
-                cw.write_label(parser.arg1())
-            elif cmd_type == "C_GOTO":
-                cw.write_goto(parser.arg1())
-            elif cmd_type == "C_IF":
-                cw.write_if(parser.arg1())
-            elif cmd_type == "C_FUNCTION":
-                cw.write_function(parser.arg1(), parser.arg2())
-            elif cmd_type == "C_CALL":
-                cw.write_call(parser.arg1(), parser.arg2())
-            elif cmd_type == "C_RETURN":
-                cw.write_return()
+    if is_directory:
+        # Só injeta Bootstrap se for um diretório completo com múltiplos arquivos
+        cw.write_bootstrap()
+        for file in os.listdir(argument_path):
+            if file.endswith(".vm"):
+                full_path = os.path.join(argument_path, file)
+                cw.set_file_name(clean_filename(file))
+                translate_file(full_path, cw)
+    else:
+        # Arquivos individuais (BasicLoop, FibonacciSeries, SimpleFunction) iniciam sem Bootstrap
+        cw.set_file_name(clean_filename(argument_path))
+        translate_file(argument_path, cw)
 
     cw.close()
-    print(f"Tradução concluída! Arquivo gerado em: {output_file}")
+    print(f"Tradução concluída! Gerado: {output_file}")
+
 
 if __name__ == "__main__":
     main()
